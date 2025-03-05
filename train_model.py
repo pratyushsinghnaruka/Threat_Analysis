@@ -1,3 +1,4 @@
+import joblib
 import pandas as pd
 import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -38,4 +39,11 @@ model.fit(X, y)
 # Save the improved model
 pickle.dump((vectorizer, model), open("model.pkl", "wb"))
 print("✅ Improved model trained and saved as model.pkl")
+
+# Save trained vectorizer and model
+joblib.dump(vectorizer, "vectorizer.pkl")
+joblib.dump(model, "model.pkl")
+
+print("Vectorizer and model saved successfully!")
+
 
