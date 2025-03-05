@@ -1,10 +1,15 @@
 import os
 import requests
 from flask import Flask, request, jsonify
+import joblib  # For loading AI model
 
 # Load API keys from environment variables
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "AIzaSyDP_EMegtgOGVC4uNAQ14RYfQInDW_dkLA")
 VIRUSTOTAL_API_KEY = os.getenv("VIRUSTOTAL_API_KEY", "5c1eb7234408454a3ab51f758cc421b9d8a90816134a5b16b652cade4a2ad95c")
+
+# Load AI Model & Vectorizer (Ensure 'vectorizer.pkl' and 'model.pkl' exist)
+vectorizer = joblib.load("vectorizer.pkl")
+model = joblib.load("model.pkl")
 
 app = Flask(__name__)
 
@@ -52,24 +57,32 @@ def check_virustotal(url):
     data = report_response.json()
     return data.get("data", {}).get("attributes", {}).get("stats", {}).get("malicious", 0) > 0
 
-@app.route('/', methods=['POST'])  # Ensure POST is allowed
-def detect_threat():
-    print("Received request data:", request.get_json())  # Debugging
+@app.route("/check_url", methods=["POST"])  # Unified endpoint
+def check_url():
     data = request.get_json()
     
-    if not data or 'url' not in data:
+    if not data or "url" not in data:
         return jsonify({"error": "Missing 'url' parameter"}), 400
     
-    url = data['url']
-    
-    google_result = check_google_safe_browsing(url)
-    virustotal_result = check_virustotal(url)
-    
+    url = data["url"]
+
+    # AI Model Prediction
+    features = vectorizer.transform([url])
+    ai_prediction = model.predict(features)[0]
+
+    # External API Checks
+    google_threat = check_google_safe_browsing(url)
+    vt_threat = check_virustotal(url)
+
+    # Final Decision
+    is_threat = bool(ai_prediction) or google_threat or vt_threat
+
     return jsonify({
-        "threat": google_result or virustotal_result,
-        "google_safe_browsing": google_result,
-        "virustotal": virustotal_result,
-        "message": "Potentially malicious" if (google_result or virustotal_result) else "Seems safe"
+        "threat": is_threat,
+        "ai_model_prediction": bool(ai_prediction),
+        "google_safe_browsing": google_threat,
+        "virustotal": vt_threat,
+        "message": "Potentially malicious" if is_threat else "Seems safe"
     })
 
 if __name__ == "__main__":
