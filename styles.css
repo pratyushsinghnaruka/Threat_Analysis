@@ -19,8 +19,8 @@ body {
   }
   
   button {
-    background-color: #ff4444;
-    color: rgba(255, 255, 255, 0.678);
+    background-color:rgba(255, 68, 68, 0.8);
+    color: rgba(255, 255, 255, 0.91);
     border: none;
     padding: 8px 16px;
     cursor: pointer;
@@ -28,5 +28,5 @@ body {
   }
   
   button:hover {
-    background-color: #cc0000;
+    background-color:rgba(204, 0, 0, 0.78);
   }
