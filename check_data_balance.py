@@ -1,26 +1,15 @@
 import pandas as pd
 
-# ✅ Load the dataset
-df = pd.read_csv("balanced_dataset.csv")  # Make sure this is the correct dataset file
+# 🔹 Load Dataset (Modify the file name if needed)
+data = pd.read_csv("balanced_dataset.csv")  # Change this to your actual dataset file
 
-# ✅ Count the number of malicious (1) vs benign (0) URLs
-label_counts = df["label"].value_counts()
+# ✅ Check the Distribution of Safe vs. Malicious URLs
+print("🔍 Safe URLs:", data[data["label"] == 0].shape[0])
+print("🔍 Malicious URLs:", data[data["label"] == 1].shape[0])
 
-# ✅ Print the results
-print("Class Distribution in Training Data:")
-print(label_counts)
+# 🚨 If Imbalance is Found, Print a Warning
+safe_count = data[data["label"] == 0].shape[0]
+malicious_count = data[data["label"] == 1].shape[0]
 
-# ✅ Calculate percentage distribution
-total = len(df)
-print(f"\nPercentage Distribution:")
-for label, count in label_counts.items():
-    print(f"Label {label}: {count} URLs ({(count / total) * 100:.2f}%)")
-
-# ✅ Optional: Visualize the distribution using a bar chart (requires matplotlib)
-import matplotlib.pyplot as plt
-
-plt.bar(label_counts.index.astype(str), label_counts.values, color=["blue", "red"])
-plt.xlabel("Label (0 = Benign, 1 = Malicious)")
-plt.ylabel("Number of URLs")
-plt.title("Training Dataset Class Distribution")
-plt.show()
+if abs(safe_count - malicious_count) > 0.1 * max(safe_count, malicious_count):  # If imbalance is >10%
+    print("⚠️ WARNING: Dataset is imbalanced! Consider collecting more data.")

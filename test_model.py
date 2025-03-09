@@ -1,14 +1,27 @@
 import joblib
-import numpy as np
 import pandas as pd
+import numpy as np
 import re
+import time
+from scipy.sparse import hstack
+from urllib.parse import urlparse
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score
+from xgboost import XGBClassifier
+from lightgbm import LGBMClassifier
+from sklearn.utils import shuffle
 
-# ✅ Load vectorizer and trained model
-vectorizer = joblib.load("vectorizer.pkl")
-model = joblib.load("best_model.pkl")  # Ensure correct model filename
+# ✅ Load dataset
+try:
+    data = pd.read_csv("balanced_dataset.csv")
+    print(f"✅ balanced_dataset loaded successfully. Total samples: {len(data)}")
+except FileNotFoundError:
+    print("❌ Error: balanced_dataset.csv not found. Please check the file location.")
+    exit()
 
-# ✅ Feature extraction functions
-def extract_basic_features(url):
+# ✅ Function to extract URL-based features
+def extract_features(url):
     return [
         len(url),  # URL length
         url.count('.'),  # Number of dots
@@ -16,71 +29,47 @@ def extract_basic_features(url):
         url.count('@'),  # Number of '@' symbols
         url.count('?'),  # Number of query parameters
         url.count('='),  # Number of '=' in URL
-        int(bool(re.search(r'https?', url)))  # HTTPS presence
+        int(bool(re.search(r'https?', url))),  # HTTPS presence
+        int(bool(re.search(r'\d+\.\d+\.\d+\.\d+', url))),  # IP Address presence
+        urlparse(url).netloc.count('.'),  # Subdomain count
+        len(urlparse(url).netloc)  # Domain length
     ]
 
-# ✅ New function to extract extra features (must match training script)
-def extract_extra_features(url):
-    return [
-        sum(c.isdigit() for c in url),  # Number of digits
-        sum(c.isalpha() for c in url),  # Number of letters
-        url.count('/'),  # Number of slashes
-        url.count('_')  # Number of underscores
-    ]
+# ✅ Apply feature extraction
+X_basic_features = np.array([extract_features(url) for url in data["url"]], dtype=np.float64)
 
-# ✅ Process a single test URL
-test_url = "http://malicious-site.com"
+# ✅ Convert URLs into TF-IDF features
+vectorizer = TfidfVectorizer(max_features=2000)
+X_tfidf = vectorizer.fit_transform(data["url"])
 
-basic_features = np.array([extract_basic_features(test_url)])
-extra_features = np.array([extract_extra_features(test_url)])  # 🔥 Missing features added
-tfidf_features = vectorizer.transform([test_url]).toarray()
+# ✅ Combine features
+X = hstack((X_basic_features, X_tfidf))
 
-# 🔍 Debug feature counts
-print(f"Basic Features Shape: {basic_features.shape}")  # Should be (1, 7)
-print(f"Extra Features Shape: {extra_features.shape}")  # Should be (1, 4)
-print(f"TF-IDF Features Shape: {tfidf_features.shape}")  # Should be (1, 2000)
+# ✅ Save feature count
+num_features = X.shape[1]
+joblib.dump(num_features, "num_features.pkl")  # ✅ Save expected feature count
 
-# ✅ Ensure the feature count matches training
-features = np.hstack((basic_features, extra_features, tfidf_features))
-print(f"Final Feature Shape (Should be 2011): {features.shape[1]}")
+# ✅ Extract labels
+y = data["label"]
 
-# Ensure correct feature count before prediction
-if features.shape[1] != 2011:
-    raise ValueError(f"Feature count mismatch! Got {features.shape[1]}, expected 2011.")
+# ✅ Shuffle dataset for better generalization
+X, y = shuffle(X, y, random_state=42)
 
-# Make prediction
-prediction = model.predict(features)[0]
-print(f"🔍 Single URL: {test_url}")
-print(f"Model Prediction: {prediction}\n")
+# ✅ Split data (80% Train, 20% Test)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-# ✅ Process a CSV dataset if available
-try:
-    df = pd.read_csv("balanced_dataset.csv")
-    print(f"✅ Loaded {len(df)} URLs from balanced_dataset.csv")
+# ✅ Train LightGBM Classifier
+lgb_model = LGBMClassifier(n_estimators=200, learning_rate=0.05, random_state=42, 
+                           force_row_wise=True, verbose=-1, n_jobs=-1)
+lgb_model.fit(X_train, y_train)
+y_pred_lgb = lgb_model.predict(X_test)
+acc_lgb = accuracy_score(y_test, y_pred_lgb)
+print(f"🚀 LightGBM Accuracy: {acc_lgb:.2%}")
 
-    # Extract features for all URLs
-    X_basic = np.array([extract_basic_features(url) for url in df["url"]])
-    X_extra = np.array([extract_extra_features(url) for url in df["url"]])  # 🔥 Missing features added
-    X_tfidf = vectorizer.transform(df["url"]).toarray()
+# ✅ Save the best model
+joblib.dump(lgb_model, "best_model.pkl")
+print(f"🏆 Best Model Saved as best_model.pkl")
 
-    # Debug shape check
-    print(f"Dataset Basic Features Shape: {X_basic.shape}")
-    print(f"Dataset Extra Features Shape: {X_extra.shape}")
-    print(f"Dataset TF-IDF Features Shape: {X_tfidf.shape}")
-
-    # Ensure feature count matches training
-    X = np.hstack((X_basic, X_extra, X_tfidf))
-    print(f"Final Dataset Feature Shape (Should be 2011): {X.shape[1]}")
-
-    # Ensure feature count matches before prediction
-    if X.shape[1] != 2011:
-        raise ValueError(f"Feature count mismatch! Got {X.shape[1]}, expected 2011.")
-
-    # Make predictions
-    df["label"] = model.predict(X)
-
-    # Save results
-    df[["url", "label"]].to_csv("labeled_dataset.csv", index=False)
-    print("✅ Classification completed! Results saved in labeled_dataset.csv")
-except FileNotFoundError:
-    print("⚠️ Warning: balanced_dataset.csv not found. Skipping dataset processing.")
+# ✅ Save vectorizer
+joblib.dump(vectorizer, "vectorizer.pkl")
+print("✅ Vectorizer saved as vectorizer.pkl.")

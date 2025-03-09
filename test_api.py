@@ -2,7 +2,7 @@ import requests
 
 api_url = "http://127.0.0.1:5000/check_url"  # Change to match your server
 
-test_data = {"url": "https://urlhaus.abuse.ch/url/3465119/"}
+test_data = {"url": "http://malicious-site.com"}
 
 try:
     response = requests.post(api_url, json=test_data, timeout=5)
