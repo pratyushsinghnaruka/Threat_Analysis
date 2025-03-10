@@ -18,7 +18,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   // Function to check URL safety using an API
     // Replace with your API endpoint or AI model
     async function checkUrlSafety(url) {
-        const apiKey = "YOUR_API_KEY";
+        const apiKey = "AIzaSyDP_EMegtgOGVC4uNAQ14RYfQInDW_dkLA";
         const apiUrl = https //safebrowsing.googleapis.com/v4/threatMatches:find?key=${apiKey};
         const response = await fetch(apiUrl, {
           method: "POST",

@@ -1,6 +1,6 @@
 import requests
 
-api_url = "http://127.0.0.1:5000/check_url"  # Change to match your server
+api_url = "https://threats-analysis.onrender.com/check_url"  # Change to match your server
 
 test_data = {"url": "http://malicious-site.com"}
 
