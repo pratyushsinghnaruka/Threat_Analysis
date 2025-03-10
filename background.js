@@ -1,37 +1,49 @@
-// Listen for URL changes in active tabs
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-    if (changeInfo.url) {
-      const url = changeInfo.url;
-      checkUrlSafety(url).then((isSafe) => {
-        if (!isSafe) {
-          // Show warning icon and popup
-          chrome.action.setIcon({ path: "icons/warning.png" });
-          chrome.action.setPopup({ popup: "popup.html" });
-        } else {
-          // Show safe icon
-          chrome.action.setIcon({ path: "icons/safe.png" });
-        }
-      });
-    }
-  });
-  
-  // Function to check URL safety using an API
-    // Replace with your API endpoint or AI model
-    async function checkUrlSafety(url) {
-        const apiKey = "AIzaSyDP_EMegtgOGVC4uNAQ14RYfQInDW_dkLA";
-        const apiUrl = https //safebrowsing.googleapis.com/v4/threatMatches:find?key=${apiKey};
-        const response = await fetch(apiUrl, {
-          method: "POST",
-          body: JSON.stringify({
-            client: { clientId: "threat-detector", clientVersion: "1.0" },
-            threatInfo: {
-              threatTypes: ["MALWARE", "SOCIAL_ENGINEERING"],
-              platformTypes: ["ANY_PLATFORM"],
-              threatEntryTypes: ["URL"],
-              threatEntries: [{ url }],
-            },
-          }),
+  if (changeInfo.url) {
+    const url = changeInfo.url;
+
+    checkUrlSafety(url).then((isSafe) => {
+      if (!isSafe) {
+        // Threat detected - show warning
+        chrome.action.setIcon({
+          path: {
+            "16": "icons/warning.png",
+            "48": "icons/warning.png",
+            "128": "icons/warning.png"
+          }
         });
-        const result = await response.json();
-        return result.matches ? false : true; // Safe if no matches
+        chrome.action.setPopup({ popup: "popup.html" });
+      } else {
+        // Site is safe - show safe icons
+        chrome.action.setIcon({
+          path: {
+            "16": "icons/safe16.png",
+            "48": "icons/safe48.png",
+            "128": "icons/safe128.png"
+          }
+        });
+        chrome.action.setPopup({ popup: "popup_safe.html" });
       }
+    });
+  }
+});
+
+// Function to check URL safety using your deployed API
+async function checkUrlSafety(url) {
+  const apiUrl = "https://threats-analysis.onrender.com/check_url";  // Your deployed Flask API endpoint
+
+  try {
+    const response = await fetch(apiUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: url })
+    });
+
+    const data = await response.json();
+
+    return !data.threat;  // Returns true if safe, false if threat detected
+  } catch (error) {
+    console.error("Error checking URL safety:", error);
+    return true;  // Fail-safe: assume safe if error occurs
+  }
+}

@@ -3,17 +3,28 @@
   "name": "Threat Detector",
   "version": "1.0",
   "description": "Detects and alerts about malicious websites.",
-  "permissions": ["activeTab", "tabs", "webRequest", "storage"],
+  "permissions": [
+    "activeTab",
+    "tabs",
+    "storage"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
   "background": {
     "service_worker": "background.js"
   },
   "action": {
-    "default_popup": "popup.html",
+    "default_popup": "popup_safe.html",
     "default_icon": {
-      "16": "icons/icon16.png",
-      "48": "icons/icon48.png",
-      "128": "icons/icon128.png"
+      "16": "icons/safe16.png",
+      "48": "icons/safe48.png",
+      "128": "icons/safe128.png"
     }
   },
-  "host_permissions": ["<all_urls>"]
+  "icons": {
+    "16": "icons/safe16.png",
+    "48": "icons/safe48.png",
+    "128": "icons/safe128.png"
+  }
 }
