@@ -1,18 +1,51 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Threat Warning</title>
-  <link rel="stylesheet" href="styles.css" />
+  <meta charset="UTF-8">
+  <title>Threat Detected!</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #fff0f0;
+      color: #721c24;
+      padding: 20px;
+      width: 300px;
+    }
+    h2 { margin-top: 0; color: #d9534f; }
+    .info-box {
+      margin-top: 10px;
+      padding: 10px;
+      background-color: #f8d7da;
+      border: 1px solid #d9534f;
+      border-radius: 5px;
+    }
+    button {
+      margin-top: 15px;
+      padding: 10px 20px;
+      background-color: #d9534f;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #c9302c;
+    }
+  </style>
 </head>
 <body>
-  <div id="warning">
-    <h1>Warning!</h1>
-    <p>This website may be unsafe.</p>
-    <button id="close">Close</button>
+  <h2>Warning!</h2>
+  <p>This website may be malicious.</p>
+
+  <div class="info-box">
+    <p><strong>URL:</strong> <span id="url">Loading...</span></p>
+    <p><strong>Message:</strong> <span id="message">Loading...</span></p>
+    <p><strong>Malicious Probability:</strong> <span id="probability">Loading...</span></p>
   </div>
 
+  <button id="closeBtn">Close</button>
+
+  <!-- Link to external JS -->
   <script src="popup.js"></script>
 </body>
 </html>

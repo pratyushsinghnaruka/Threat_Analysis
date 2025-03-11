@@ -1,18 +1,51 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Site is Safe</title>
-  <link rel="stylesheet" href="styles.css" />
+  <meta charset="UTF-8">
+  <title>Safe Site</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #d4edda;
+      color: #155724;
+      padding: 20px;
+      width: 300px;
+    }
+    h2 { margin-top: 0; }
+    .info-box {
+      margin-top: 10px;
+      padding: 10px;
+      background-color: #f8f9fa;
+      border: 1px solid #c3e6cb;
+      border-radius: 5px;
+    }
+    button {
+      margin-top: 15px;
+      padding: 10px 20px;
+      background-color: #28a745;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #218838;
+    }
+  </style>
 </head>
 <body>
-  <div id="safe">
-    <h1 style="color: green;">Site is Safe!</h1>
-    <p>This website appears to be safe.</p>
-    <button id="close">Close</button>
+  <h2>Site is Safe!</h2>
+  <p>This website appears to be safe.</p>
+
+  <div class="info-box">
+    <p><strong>URL:</strong> <span id="url">Loading...</span></p>
+    <p><strong>Message:</strong> <span id="message">Loading...</span></p>
+   
   </div>
 
+  <button id="closeBtn">Close</button>
+
+  <!-- Link to external JS -->
   <script src="popup_safe.js"></script>
 </body>
 </html>

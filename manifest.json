@@ -15,6 +15,7 @@
     "service_worker": "background.js"
   },
   "action": {
+    
     "default_popup": "popup_safe.html",
     "default_icon": {
       "16": "icons/safe16.png",
