@@ -6,10 +6,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     if (result && result.threatData) {
-      const { url, message, malicious_probability } = result.threatData;
-
-      document.getElementById('url').innerText = url || "Unknown";
-      document.getElementById('message').innerText = message || "No message";
+      const { malicious_probability } = result.threatData;
 
       // Only display probability if it's defined
       if (malicious_probability !== undefined) {
@@ -18,7 +15,6 @@ document.addEventListener('DOMContentLoaded', function() {
       } else {
         document.getElementById('probability').innerText = "Unknown";
       }
-
     } else {
       console.log('No threat data found.');
     }
