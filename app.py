@@ -7,31 +7,28 @@ import traceback
 from urllib.parse import urlparse
 
 import numpy as np
-import pandas as pd
 import requests
-
+import joblib
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-
 from scipy.sparse import hstack
-import joblib
-
 from dotenv import load_dotenv
-load_dotenv()
+import openai
 
 # Load environment variables
+load_dotenv()
+
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 VIRUSTOTAL_API_KEY = os.getenv("VIRUSTOTAL_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-# Set up OpenAI (v1.25.1+ syntax)
-import openai
+# Set up OpenAI
 openai.api_key = OPENAI_API_KEY
 
+# Load ML models
 # Load models
-model = joblib.load("model.pkl")
-vectorizer1 = joblib.load("vectorizer1.pkl")
-vectorizer2 = joblib.load("vectorizer2.pkl")
+model = joblib.load("best_model.pkl")
+vectorizer = joblib.load("vectorizer.pkl")
 
 # Flask setup
 app = Flask(__name__)
@@ -75,16 +72,19 @@ def analyze():
 
         # === VirusTotal ===
         headers = {"x-apikey": VIRUSTOTAL_API_KEY}
-        vt_response = requests.get(f"https://www.virustotal.com/api/v3/urls", headers=headers)
-        vt_url_id = requests.post("https://www.virustotal.com/api/v3/urls", data={"url": url}, headers=headers).json()["data"]["id"]
-        vt_result_data = requests.get(f"https://www.virustotal.com/api/v3/urls/{vt_url_id}", headers=headers).json()
-        positives = sum(1 for engine in vt_result_data["data"]["attributes"]["last_analysis_results"].values()
-                        if engine["category"] == "malicious")
-        vt_result = "threat" if positives > 0 else "safe"
+        vt_url_id_response = requests.post("https://www.virustotal.com/api/v3/urls", data={"url": url}, headers=headers)
+        vt_url_id = vt_url_id_response.json().get("data", {}).get("id", "")
+        if vt_url_id:
+            vt_result_data = requests.get(f"https://www.virustotal.com/api/v3/urls/{vt_url_id}", headers=headers).json()
+            positives = sum(1 for engine in vt_result_data["data"]["attributes"]["last_analysis_results"].values()
+                            if engine["category"] == "malicious")
+            vt_result = "threat" if positives > 0 else "safe"
+        else:
+            vt_result = "safe"  # If no ID returned, assume safe
 
         # === ML Prediction ===
-        url_features = vectorizer1.transform([url])
-        domain_features = vectorizer2.transform([domain])
+        url_features = vectorizer.transform([url])
+        domain_features = vectorizer.transform([domain])
         features = hstack([url_features, domain_features])
         prediction = model.predict(features)[0]
         ml_result = "threat" if prediction == 1 else "safe"
@@ -96,7 +96,7 @@ def analyze():
             messages=[{"role": "user", "content": prompt}],
             temperature=0.5
         )
-        genai_analysis = response.choices[0].message.content.strip()
+        genai_analysis = response.choices[0].message["content"].strip()
 
         return jsonify({
             "google_result": google_result,
