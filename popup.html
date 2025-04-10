@@ -19,6 +19,14 @@
       border: 1px solid #d9534f;
       border-radius: 5px;
     }
+    .genai-box {
+      margin-top: 10px;
+      padding: 10px;
+      background-color: #fce8e6;
+      border: 1px dashed #d9534f;
+      border-radius: 5px;
+      font-size: 13px;
+    }
     button {
       margin-top: 15px;
       padding: 10px 20px;
@@ -41,9 +49,13 @@
     <p><strong>Malicious Probability:</strong> <span id="probability">Loading...</span></p>
   </div>
 
+  <div class="genai-box" id="genaiAnalysis" style="display: none;">
+    <strong>GenAI Analysis:</strong>
+    <p id="genaiText">Analyzing...</p>
+  </div>
+
   <button id="closeBtn">Close</button>
 
-  <!-- Link to external JS -->
   <script src="popup.js"></script>
 </body>
 </html>
