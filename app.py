@@ -5,12 +5,15 @@ import os
 import traceback
 from urllib.parse import urlparse
 
+import numpy as np
 import requests
 import joblib
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from dotenv import load_dotenv
 import openai
+
+from scipy.sparse import hstack  # just in case, but not used now
 
 # Load environment variables
 load_dotenv()
@@ -30,14 +33,13 @@ vectorizer = joblib.load("vectorizer.pkl")
 app = Flask(__name__)
 CORS(app)
 
-# Utility: Extract domain
+# Extract domain utility
 def extract_domain(url):
     try:
         return urlparse(url).netloc
     except:
         return ""
 
-# Analyze route
 @app.route("/analyze", methods=["POST"])
 def analyze():
     try:
@@ -77,8 +79,8 @@ def analyze():
         except Exception as vt_error:
             print("VirusTotal error:", vt_error)
 
-        # === ML Prediction ===
-        features = vectorizer.transform([url])  # ✅ fixed: only use URL, not domain
+        # === ML Prediction (ONLY using URL) ===
+        features = vectorizer.transform([url])
         prediction = model.predict(features)[0]
         ml_result = "threat" if prediction == 1 else "safe"
 
