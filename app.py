@@ -22,7 +22,6 @@ GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 VIRUSTOTAL_API_KEY = os.getenv("VIRUSTOTAL_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-# Set up OpenAI
 openai.api_key = OPENAI_API_KEY
 
 # Load ML model and vectorizer
@@ -48,7 +47,7 @@ def extract_features(url):
         url.lower().count("login")
     ]
 
-# Extract domain utility
+# === Domain Extractor ===
 def extract_domain(url):
     try:
         return urlparse(url).netloc
@@ -94,10 +93,11 @@ def analyze():
         except Exception as vt_error:
             print("VirusTotal error:", vt_error)
 
-        # === ML Prediction (Numeric + Vectorized URL) ===
+        # === ML Prediction (Numeric + URL Vector + Domain Vector) ===
         numeric_features = np.array([extract_features(url)], dtype=np.float64)
         url_vectorized = vectorizer.transform([url])
-        features = hstack([numeric_features, url_vectorized])
+        domain_vectorized = vectorizer.transform([domain])
+        features = hstack([numeric_features, url_vectorized, domain_vectorized])
         prediction = model.predict(features)[0]
         ml_result = "threat" if prediction == 1 else "safe"
 
