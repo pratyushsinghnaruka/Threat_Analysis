@@ -11,7 +11,7 @@ import joblib
 import re
 from scipy.sparse import hstack
 from urllib.parse import urlparse
-import openai
+from openai import OpenAI
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -21,7 +21,9 @@ load_dotenv()
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 VIRUSTOTAL_API_KEY = os.getenv("VIRUSTOTAL_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-openai.api_key = OPENAI_API_KEY
+
+# Initialize OpenAI client with the new format
+client = OpenAI(api_key=OPENAI_API_KEY)
 
 # Load trained model and vectorizer
 model = joblib.load("best_model.pkl")
@@ -78,14 +80,14 @@ def check_virustotal(url):
     malicious_count = data.get("data", {}).get("attributes", {}).get("stats", {}).get("malicious", 0)
     return malicious_count > 0
 
-# OpenAI GenAI analysis
+# OpenAI GenAI analysis using new format
 def analyze_with_genai(url):
     try:
         prompt = (
             f"Analyze the following URL for signs of phishing, malware, or suspicious behavior:\n\n{url}\n\n"
             f"Give a short 2-3 line analysis."
         )
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": "You are a cybersecurity analyst."},
