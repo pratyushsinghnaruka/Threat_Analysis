@@ -12,7 +12,6 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 from dotenv import load_dotenv
 import openai
-
 from scipy.sparse import hstack
 
 # Load environment variables
@@ -22,9 +21,10 @@ GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 VIRUSTOTAL_API_KEY = os.getenv("VIRUSTOTAL_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-openai.api_key = OPENAI_API_KEY
+# Set up OpenAI v1 client
+openai_client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
-# Load ML model and vectorizer
+# Load model and vectorizer
 model = joblib.load("best_model.pkl")
 vectorizer = joblib.load("vectorizer.pkl")
 
@@ -32,7 +32,7 @@ vectorizer = joblib.load("vectorizer.pkl")
 app = Flask(__name__)
 CORS(app)
 
-# === Feature Extraction Function ===
+# === Feature Extraction ===
 def extract_features(url):
     return [
         len(url),
@@ -47,7 +47,7 @@ def extract_features(url):
         url.lower().count("login")
     ]
 
-# === Domain Extractor ===
+# === Domain extraction ===
 def extract_domain(url):
     try:
         return urlparse(url).netloc
@@ -69,7 +69,10 @@ def analyze():
         google_payload = {
             "client": {"clientId": "yourcompanyname", "clientVersion": "1.0"},
             "threatInfo": {
-                "threatTypes": ["MALWARE", "SOCIAL_ENGINEERING", "UNWANTED_SOFTWARE", "POTENTIALLY_HARMFUL_APPLICATION"],
+                "threatTypes": [
+                    "MALWARE", "SOCIAL_ENGINEERING",
+                    "UNWANTED_SOFTWARE", "POTENTIALLY_HARMFUL_APPLICATION"
+                ],
                 "platformTypes": ["ANY_PLATFORM"],
                 "threatEntryTypes": ["URL"],
                 "threatEntries": [{"url": url}]
@@ -93,22 +96,25 @@ def analyze():
         except Exception as vt_error:
             print("VirusTotal error:", vt_error)
 
-        # === ML Prediction (Numeric + URL Vector + Domain Vector) ===
+        # === ML Prediction (numeric + vectorized URL) ===
         numeric_features = np.array([extract_features(url)], dtype=np.float64)
         url_vectorized = vectorizer.transform([url])
-        domain_vectorized = vectorizer.transform([domain])
-        features = hstack([numeric_features, url_vectorized, domain_vectorized])
+        features = hstack([numeric_features, url_vectorized])
+
+        print("Feature shape:", features.shape)
+        print("Model expects:", model.n_features_in_)
+
         prediction = model.predict(features)[0]
         ml_result = "threat" if prediction == 1 else "safe"
 
         # === GenAI (OpenAI) ===
-        prompt = f"Analyze the following URL and tell if it looks like a phishing, malware, or suspicious website: {url}"
-        response = openai.chat.completions.create(
+        prompt = f"Analyze this URL and say whether it looks safe, suspicious, phishing, or malicious: {url}"
+        completion = openai_client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.5
         )
-        genai_analysis = response.choices[0].message.content.strip()
+        genai_analysis = completion.choices[0].message.content.strip()
 
         return jsonify({
             "google_result": google_result,
