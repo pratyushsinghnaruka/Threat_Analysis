@@ -13,7 +13,7 @@ from flask_cors import CORS
 from dotenv import load_dotenv
 import openai
 
-from scipy.sparse import hstack  # just in case, but not used now
+from scipy.sparse import hstack
 
 # Load environment variables
 load_dotenv()
@@ -32,6 +32,21 @@ vectorizer = joblib.load("vectorizer.pkl")
 # Flask setup
 app = Flask(__name__)
 CORS(app)
+
+# === Feature Extraction Function ===
+def extract_features(url):
+    return [
+        len(url),
+        url.count('.'),
+        url.count('-'),
+        url.count('@'),
+        url.count('='),
+        url.count('?'),
+        url.count('&'),
+        sum(char.isdigit() for char in url),
+        url.lower().count("https"),
+        url.lower().count("login")
+    ]
 
 # Extract domain utility
 def extract_domain(url):
@@ -79,8 +94,10 @@ def analyze():
         except Exception as vt_error:
             print("VirusTotal error:", vt_error)
 
-        # === ML Prediction (ONLY using URL) ===
-        features = vectorizer.transform([url])
+        # === ML Prediction (Numeric + Vectorized URL) ===
+        numeric_features = np.array([extract_features(url)], dtype=np.float64)
+        url_vectorized = vectorizer.transform([url])
+        features = hstack([numeric_features, url_vectorized])
         prediction = model.predict(features)[0]
         ml_result = "threat" if prediction == 1 else "safe"
 
