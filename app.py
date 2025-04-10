@@ -2,7 +2,6 @@ import warnings
 warnings.filterwarnings("ignore", message="numpy.dtype size changed")
 
 import os
-import re
 import traceback
 from urllib.parse import urlparse
 
@@ -25,8 +24,7 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 # Set up OpenAI
 openai.api_key = OPENAI_API_KEY
 
-# Load ML models
-# Load models
+# Load ML model and vectorizer
 model = joblib.load("best_model.pkl")
 vectorizer = joblib.load("vectorizer.pkl")
 
@@ -41,13 +39,12 @@ def extract_domain(url):
     except:
         return ""
 
-# Threat analysis route
+# Analyze route
 @app.route("/analyze", methods=["POST"])
 def analyze():
     try:
         data = request.get_json()
         url = data.get("url", "")
-
         if not url:
             return jsonify({"error": "URL is required"}), 400
 
@@ -56,10 +53,7 @@ def analyze():
         # === Google Safe Browsing ===
         google_url = f"https://safebrowsing.googleapis.com/v4/threatMatches:find?key={GOOGLE_API_KEY}"
         google_payload = {
-            "client": {
-                "clientId": "yourcompanyname",
-                "clientVersion": "1.0"
-            },
+            "client": {"clientId": "yourcompanyname", "clientVersion": "1.0"},
             "threatInfo": {
                 "threatTypes": ["MALWARE", "SOCIAL_ENGINEERING", "UNWANTED_SOFTWARE", "POTENTIALLY_HARMFUL_APPLICATION"],
                 "platformTypes": ["ANY_PLATFORM"],
@@ -71,16 +65,22 @@ def analyze():
         google_result = "threat" if "matches" in google_response else "safe"
 
         # === VirusTotal ===
-        headers = {"x-apikey": VIRUSTOTAL_API_KEY}
-        vt_url_id_response = requests.post("https://www.virustotal.com/api/v3/urls", data={"url": url}, headers=headers)
-        vt_url_id = vt_url_id_response.json().get("data", {}).get("id", "")
-        if vt_url_id:
-            vt_result_data = requests.get(f"https://www.virustotal.com/api/v3/urls/{vt_url_id}", headers=headers).json()
-            positives = sum(1 for engine in vt_result_data["data"]["attributes"]["last_analysis_results"].values()
-                            if engine["category"] == "malicious")
-            vt_result = "threat" if positives > 0 else "safe"
-        else:
-            vt_result = "safe"  # If no ID returned, assume safe
+        vt_result = "error"
+        try:
+            headers = {"x-apikey": VIRUSTOTAL_API_KEY}
+            submit_resp = requests.post("https://www.virustotal.com/api/v3/urls", data={"url": url}, headers=headers).json()
+            vt_url_id = submit_resp.get("data", {}).get("id")
+
+            if vt_url_id:
+                vt_response = requests.get(f"https://www.virustotal.com/api/v3/urls/{vt_url_id}", headers=headers).json()
+                analysis_results = vt_response.get("data", {}).get("attributes", {}).get("last_analysis_results", {})
+                positives = sum(1 for engine in analysis_results.values() if engine["category"] == "malicious")
+                vt_result = "threat" if positives > 0 else "safe"
+            else:
+                vt_result = "error"
+        except Exception as vt_error:
+            print("VirusTotal error:", vt_error)
+            vt_result = "error"
 
         # === ML Prediction ===
         url_features = vectorizer.transform([url])
@@ -96,7 +96,7 @@ def analyze():
             messages=[{"role": "user", "content": prompt}],
             temperature=0.5
         )
-        genai_analysis = response.choices[0].message["content"].strip()
+        genai_analysis = response.choices[0].message.content.strip()
 
         return jsonify({
             "google_result": google_result,
