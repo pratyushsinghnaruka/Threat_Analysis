@@ -5,12 +5,10 @@ import os
 import traceback
 from urllib.parse import urlparse
 
-import numpy as np
 import requests
 import joblib
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from scipy.sparse import hstack
 from dotenv import load_dotenv
 import openai
 
@@ -76,16 +74,11 @@ def analyze():
                 analysis_results = vt_response.get("data", {}).get("attributes", {}).get("last_analysis_results", {})
                 positives = sum(1 for engine in analysis_results.values() if engine["category"] == "malicious")
                 vt_result = "threat" if positives > 0 else "safe"
-            else:
-                vt_result = "error"
         except Exception as vt_error:
             print("VirusTotal error:", vt_error)
-            vt_result = "error"
 
         # === ML Prediction ===
-        url_features = vectorizer.transform([url])
-        domain_features = vectorizer.transform([domain])
-        features = hstack([url_features, domain_features])
+        features = vectorizer.transform([url])  # ✅ fixed: only use URL, not domain
         prediction = model.predict(features)[0]
         ml_result = "threat" if prediction == 1 else "safe"
 
