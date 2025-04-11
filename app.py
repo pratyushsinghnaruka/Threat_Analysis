@@ -4,28 +4,26 @@ from flask_cors import CORS
 import joblib
 import numpy as np
 import openai
-from openai import OpenAI
 from dotenv import load_dotenv
 import requests
 
-# Load .env
+# Load environment variables
 load_dotenv()
 
-# Load API keys from environment
+# Set OpenAI API key (legacy style, avoids 'proxies' issue)
+openai.api_key = os.getenv("OPENAI_API_KEY")
+
+# Load other API keys
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 VT_API_KEY = os.getenv("VT_API_KEY")
 
-# Initialize Flask
+# Initialize Flask app
 app = Flask(__name__)
 CORS(app)
 
 # Load model and vectorizer
 model = joblib.load("best_model.pkl")
 vectorizer = joblib.load("vectorizer.pkl")
-
-# Set up OpenAI client (v1 syntax, no proxies)
-openai_client = OpenAI(api_key=OPENAI_API_KEY)
 
 @app.route("/")
 def index():
@@ -39,7 +37,7 @@ def analyze():
     if not url:
         return jsonify({"error": "No URL provided"}), 400
 
-    # Vectorize URL
+    # ML prediction
     try:
         features = vectorizer.transform([url])
         prediction = model.predict(features)[0]
@@ -47,7 +45,7 @@ def analyze():
     except Exception as e:
         return jsonify({"error": f"Model prediction failed: {str(e)}"}), 500
 
-    # Google Safe Browsing
+    # Google Safe Browsing check
     google_threat = False
     try:
         google_res = requests.post(
@@ -70,7 +68,7 @@ def analyze():
     vt_threat = False
     try:
         headers = {"x-apikey": VT_API_KEY}
-        scan_url = f"https://www.virustotal.com/api/v3/urls"
+        scan_url = "https://www.virustotal.com/api/v3/urls"
         scan_res = requests.post(scan_url, headers=headers, data={"url": url}).json()
         scan_id = scan_res["data"]["id"]
 
@@ -80,17 +78,17 @@ def analyze():
     except Exception:
         pass
 
-    # OpenAI GenAI context analysis
+    # OpenAI GenAI URL context analysis
     try:
         prompt = f"Analyze this URL: {url}. Could it be suspicious, scammy, or malicious?"
-        ai_response = openai_client.chat.completions.create(
+        ai_response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": "You are a cybersecurity assistant."},
                 {"role": "user", "content": prompt}
             ]
         )
-        genai_output = ai_response.choices[0].message.content
+        genai_output = ai_response["choices"][0]["message"]["content"]
     except Exception as e:
         genai_output = f"GenAI analysis failed: {str(e)}"
 
