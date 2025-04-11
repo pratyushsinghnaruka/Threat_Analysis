@@ -21,7 +21,7 @@ load_dotenv()
 openai.api_key = os.getenv("OPENAI_API_KEY")
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 VT_API_KEY = os.getenv("VIRUSTOTAL_API_KEY")
-HF_API_KEY = os.getenv("HUGGINGFACE_API_KEY")  # Add this to your .env
+HF_API_KEY = os.getenv("HUGGINGFACE_API_KEY")
 
 # Load model and vectorizer
 model = joblib.load("best_model.pkl")
@@ -134,36 +134,17 @@ def analyze_url():
                 genai_output = f"GenAI analysis failed: {str(e)}"
                 genai_status = "openai_error"
 
-        # Aggressive tone if model is confident
+        # Add GenAI clarification for high confidence
         if malicious_prob >= THRESHOLD:
             genai_output = (
                 f"🚨 This URL is classified as malicious with high confidence (≥ 90%).\n\n"
                 + genai_output
             )
-            lines = genai_output.splitlines()
-            filtered_lines = []
-            for line in lines:
-                lower_line = line.strip().lower()
-                if (
-                    lower_line.startswith("the url appears to be a legitimate") or
-                    "seems to be a legitimate" in lower_line or
-                    "appears safe" in lower_line or
-                    "does not seem suspicious" in lower_line or
-                    "likely harmless" in lower_line or
-                    "likely safe" in lower_line or
-                    "probably safe" in lower_line or
-                    "legitimate" in lower_line
-                ):
-                    continue
-                # Rewrite soft phrases with stronger alternatives
-                line = line.replace("seems safe", "🚨 Assume malicious unless verified through trusted sources.")
-                line = line.replace("appears to be safe", "⚠️ May be malicious — verify through official tools only.")
-                line = line.replace("likely safe", "🔴 Potentially dangerous — proceed only if fully validated.")
-                line = line.replace("probably safe", "❗ No guarantee of safety — high chance of deception.")
-                line = line.replace("does not seem suspicious", "🚨 Still poses risk — trust only after strict verification.")
-                line = line.replace("legitimate", "⚠️ Could be crafted to appear trustworthy — inspect closely.")
-                filtered_lines.append(line)
-            genai_output = '\n'.join(filtered_lines)
+
+        # Replace 'legitimate' phrasing with aggressive tone
+        genai_output = genai_output.replace("appears to be a legitimate", "appears to be not legitimate")
+        genai_output = genai_output.replace("seems to be a legitimate", "seems to be not legitimate")
+        genai_output = genai_output.replace("likely a legitimate", "likely not a legitimate")
 
         return jsonify({
             "url": str(url),
