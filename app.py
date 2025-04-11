@@ -1,4 +1,5 @@
 import os
+import pandas as pd
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import joblib
@@ -10,7 +11,7 @@ import requests
 # Load environment variables
 load_dotenv()
 
-# Set OpenAI API key (legacy style, avoids 'proxies' issue)
+# Set OpenAI API key (legacy style)
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
 # Load other API keys
@@ -37,11 +38,12 @@ def analyze():
     if not url:
         return jsonify({"error": "No URL provided"}), 400
 
-    # ML prediction
+    # ML prediction with feature names (LightGBM safe)
     try:
         features = vectorizer.transform([url])
-        prediction = model.predict(features)[0]
-        confidence = max(model.predict_proba(features)[0])
+        features_df = pd.DataFrame(features.toarray(), columns=vectorizer.get_feature_names_out())
+        prediction = model.predict(features_df)[0]
+        confidence = max(model.predict_proba(features_df)[0])
     except Exception as e:
         return jsonify({"error": f"Model prediction failed: {str(e)}"}), 500
 
@@ -106,3 +108,5 @@ def analyze():
 
 if __name__ == "__main__":
     app.run(debug=True)
+
+
