@@ -12,6 +12,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 from dotenv import load_dotenv
 import openai
+from openai import OpenAI 
 from scipy.sparse import hstack
 
 # Load environment variables
@@ -22,7 +23,7 @@ VIRUSTOTAL_API_KEY = os.getenv("VIRUSTOTAL_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 # Set up OpenAI v1 client
-openai_client = openai.OpenAI(api_key=OPENAI_API_KEY)
+openai_client = OpenAI(api_key=OPENAI_API_KEY)
 
 # Load model and vectorizer
 model = joblib.load("best_model.pkl")
