@@ -97,7 +97,6 @@ def analyze_url():
         google_threat = check_google_safe_browsing(url)
         vt_threat = check_virustotal(url)
 
-        # ✅ OpenAI + Hugging Face fallback
         try:
             ai_response = openai.ChatCompletion.create(
                 model="gpt-3.5-turbo",
@@ -134,6 +133,13 @@ def analyze_url():
             else:
                 genai_output = f"GenAI analysis failed: {str(e)}"
                 genai_status = "openai_error"
+
+        # ✅ Prepend clarification if model is highly confident
+        if malicious_prob >= THRESHOLD:
+            genai_output = (
+                f"⚠️ This URL is classified as malicious based on model prediction (≥ 90% confidence).\n\n"
+                + genai_output
+            )
 
         return jsonify({
             "url": str(url),
