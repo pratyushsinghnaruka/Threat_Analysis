@@ -7,7 +7,6 @@ import traceback
 from urllib.parse import urlparse
 
 import numpy as np
-import pandas as pd
 import requests
 import joblib
 from flask import Flask, request, jsonify
@@ -22,19 +21,17 @@ load_dotenv()
 openai.api_key = os.getenv("OPENAI_API_KEY")
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 VT_API_KEY = os.getenv("VIRUSTOTAL_API_KEY")
+HF_API_KEY = os.getenv("HUGGINGFACE_API_KEY")  # Add this to your .env
 
 # Load model and vectorizer
 model = joblib.load("best_model.pkl")
 vectorizer = joblib.load("vectorizer.pkl")
 
-# Threshold for AI model
 THRESHOLD = 0.9
 
-# Initialize Flask app
 app = Flask(__name__)
 CORS(app)
 
-# Function to extract numeric features
 def extract_features(url):
     parsed_url = urlparse(url)
     return [
@@ -50,7 +47,6 @@ def extract_features(url):
         len(parsed_url.netloc)
     ]
 
-# Google Safe Browsing
 def check_google_safe_browsing(url):
     api_url = f"https://safebrowsing.googleapis.com/v4/threatMatches:find?key={GOOGLE_API_KEY}"
     payload = {
@@ -65,7 +61,6 @@ def check_google_safe_browsing(url):
     res = requests.post(api_url, json=payload)
     return res.json() != {}
 
-# VirusTotal Check
 def check_virustotal(url):
     headers = {"x-apikey": VT_API_KEY}
     response = requests.post("https://www.virustotal.com/api/v3/urls", headers=headers, data={"url": url})
@@ -92,20 +87,17 @@ def analyze_url():
         if not url:
             return jsonify({"error": "No URL provided"}), 400
 
-        # ✅ Combined Feature Engineering
         numeric_features = np.array([extract_features(url)], dtype=np.float64)
         text_features = vectorizer.transform([url])
         features_combined = hstack([numeric_features, text_features])
 
-        # ✅ Predict
         malicious_prob = model.predict_proba(features_combined)[0][1]
         ai_threat = malicious_prob >= THRESHOLD
 
-        # ✅ External APIs
         google_threat = check_google_safe_browsing(url)
         vt_threat = check_virustotal(url)
 
-        # ✅ OpenAI GenAI Analysis with status
+        # ✅ OpenAI + Hugging Face fallback
         try:
             ai_response = openai.ChatCompletion.create(
                 model="gpt-3.5-turbo",
@@ -116,15 +108,33 @@ def analyze_url():
             )
             genai_output = ai_response["choices"][0]["message"]["content"]
             genai_status = "success"
+
         except Exception as e:
             if "quota" in str(e).lower():
-                genai_output = "GenAI analysis unavailable: quota exceeded."
-                genai_status = "quota_exceeded"
+                try:
+                    hf_headers = {"Authorization": f"Bearer {HF_API_KEY}"}
+                    hf_payload = {
+                        "inputs": f"Analyze this URL: {url}. Could it be malicious?",
+                        "parameters": {"max_new_tokens": 100}
+                    }
+                    hf_response = requests.post(
+                        "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.1",
+                        headers=hf_headers,
+                        json=hf_payload
+                    )
+                    if hf_response.status_code == 200:
+                        genai_output = hf_response.json()[0]["generated_text"]
+                        genai_status = "huggingface_fallback"
+                    else:
+                        genai_output = "GenAI analysis failed: Hugging Face API error."
+                        genai_status = "huggingface_error"
+                except Exception as hf_error:
+                    genai_output = f"GenAI analysis failed using Hugging Face: {str(hf_error)}"
+                    genai_status = "huggingface_error"
             else:
                 genai_output = f"GenAI analysis failed: {str(e)}"
-                genai_status = "error"
+                genai_status = "openai_error"
 
-        # ✅ Return (Safe Serialization)
         return jsonify({
             "url": str(url),
             "threat": bool(ai_threat),
