@@ -4,143 +4,73 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     console.log("🔄 URL changed:", url);
 
     if (isGoogleSearch(url)) {
-      console.log("🔹 Google Search detected. Marking as safe.");
-
-      chrome.action.setIcon({
-        path: {
-          "16": "icons/safe16.png",
-          "48": "icons/safe48.png",
-          "128": "icons/safe128.png",
-        },
-        tabId: tabId,
-      });
-
-      chrome.action.setPopup({
-        popup: "popup_safe.html",
-        tabId: tabId,
-      });
-
-      chrome.storage.local.set({
-        threatData: {
-          url: url,
-          message: "Google Search is always safe.",
-          malicious_probability: 0,
-          threat: false,
-          dataset: false,
-        },
-      });
-
+      markAsSafe(tabId, url, "Google Search is always safe.");
       return;
     }
 
-    checkUrlSafety(url)
-      .then((data) => {
-        if (data.error) {
-          console.error("⚠️ Threat detection failed:", data.error);
-          return;
-        }
+    checkUrlSafety(url).then((data) => {
+      if (data.error) {
+        console.error("⚠ Threat detection failed:", data.error);
+        return;
+      }
 
-        const probability = typeof data.malicious_probability === "number" ? data.malicious_probability : 0;
-        const isDatasetThreat = data.dataset === true;
-        const isThreat = isDatasetThreat || data.threat === true || probability > 50;
-        let genaiText = data.genai_analysis || null;
+      const probability = typeof data.malicious_probability === "number" ? data.malicious_probability : 0;
+      const isDatasetThreat = data.dataset === true;
+      const isThreat = isDatasetThreat || data.threat === true || probability > 50;
 
-        // ✅ Adjust misleading GenAI "False" outputs
-        if (genaiText && genaiText.toLowerCase().includes("false") && probability > 0.9) {
-          genaiText = "⚠️ Likely malicious (based on ML and API results)";
-        }
+      let genaiText = data.genai_analysis || "";
 
-        // ✅ Patch vague GenAI responses when probability is very high
-        const weakGenAI = genaiText &&
-          (genaiText.toLowerCase().includes("appears to be a legitimate") ||
-           genaiText.toLowerCase().includes("always be cautious") ||
-           genaiText.length < 100);
+      // 🧠 Fix vague or contradictory GenAI outputs
+      if (genaiText.toLowerCase().includes("false") && probability >= 0.9) {
+        genaiText = "⚠ Likely malicious (based on ML and API results)";
+      }
 
-        if (probability > 95 && weakGenAI) {
-          genaiText =
-            "⚠️ This website is flagged as malicious by our systems.\n\n" +
-            "GenAI was unable to provide a reliable analysis, but our ML and API responses strongly indicate this site is unsafe.\n\n" +
-            "Malicious Probability: " + probability.toFixed(2) + "%";
-        }
+      const weakGenAI = genaiText.toLowerCase().includes("appears to be a legitimate") ||
+                        genaiText.toLowerCase().includes("always be cautious") ||
+                        genaiText.length < 100;
 
-        console.log(`🔍 Checked URL: ${url}`);
-        console.log(`📌 Threat in dataset? ${isDatasetThreat}`);
-        console.log(`🚨 Threat? ${isThreat}`);
-        console.log(`📊 Malicious Probability: ${probability}%`);
-        if (genaiText) {
-          console.log(`🧠 GenAI Analysis: ${genaiText}`);
-        }
+      if (probability >= 0.95 && weakGenAI) {
+        genaiText =
+          "⚠ This website is flagged as malicious by our systems.\n\n" +
+          "GenAI was unable to provide a reliable analysis, but our ML and API responses strongly indicate this site is unsafe.\n\n" +
+          "Malicious Probability: " + probability.toFixed(2) + "%";
+      }
 
-        if (!isThreat) {
-          chrome.action.setIcon({
-            path: {
-              "16": "icons/safe16.png",
-              "48": "icons/safe48.png",
-              "128": "icons/safe128.png",
-            },
-            tabId: tabId,
-          });
+      // 🧠 Logging
+      console.log("🔍 Checked URL:", url);
+      console.log("📌 Threat in dataset?", isDatasetThreat);
+      console.log("🚨 Threat?", isThreat);
+      console.log("📊 Malicious Probability:", probability + "%");
+      if (genaiText) console.log("🧠 GenAI Analysis:", genaiText);
 
-          chrome.action.setPopup({
-            popup: "popup_safe.html",
-            tabId: tabId,
-          });
+      // 🔔 UI + Icon updates
+      if (!isThreat) {
+        markAsSafe(tabId, url, data.message || "No known threats detected.");
+      } else {
+        markAsThreat(tabId, url);
+      }
 
-          console.log("✅ Safe or unknown site detected, no notification displayed.");
+      // 💾 Save threat data to local storage
+      chrome.storage.local.set({
+        threatData: {
+          url: data.url || url,
+          message: data.message || "",
+          malicious_probability: probability,
+          threat: isThreat,
+          dataset: isDatasetThreat,
+          genai_analysis: genaiText,
+        },
+      }, () => {
+        if (chrome.runtime.lastError) {
+          console.error("❌ Error saving to storage:", chrome.runtime.lastError);
         } else {
-          chrome.action.setIcon({
-            path: {
-              "16": "icons/warning16.png",
-              "48": "icons/warning48.png",
-              "128": "icons/warning128.png",
-            },
-            tabId: tabId,
-          });
-
-          chrome.action.setPopup({
-            popup: "popup.html",
-            tabId: tabId,
-          });
-
-          chrome.notifications.create({
-            type: "basic",
-            iconUrl: "icons/warning48.png",
-            title: "⚠️ Unsafe Website Detected!",
-            message: `Potential threat found on:\n${url}`,
-            priority: 2,
-          });
+          console.log("✅ Threat data saved.");
         }
-
-        chrome.storage.local.set(
-          {
-            threatData: {
-              url: data.url || url,
-              message: data.message || "",
-              malicious_probability: probability,
-              threat: isThreat,
-              dataset: isDatasetThreat,
-              genai_analysis: genaiText,
-            },
-          },
-          () => {
-            if (chrome.runtime.lastError) {
-              console.error("❌ Error saving to storage:", chrome.runtime.lastError);
-            } else {
-              console.log("✅ Threat data saved to storage:", {
-                url: data.url || url,
-                message: data.message,
-                malicious_probability: probability,
-                threat: isThreat,
-                dataset: isDatasetThreat,
-                genai_analysis: genaiText,
-              });
-            }
-          }
-        );
-      })
-      .catch((error) => {
-        console.error("❌ Error in threat detection:", error);
       });
+
+    }).catch((error) => {
+      console.error("❌ Error in threat detection:", error);
+    });
   }
 });
 
@@ -148,8 +78,63 @@ function isGoogleSearch(url) {
   return url.startsWith("https://www.google.com/search?");
 }
 
+function markAsSafe(tabId, url, message) {
+  chrome.action.setIcon({
+    path: {
+      "16": "icons/safe16.png",
+      "48": "icons/safe48.png",
+      "128": "icons/safe128.png",
+    },
+    tabId: tabId,
+  });
+
+  chrome.action.setPopup({
+    popup: "popup_safe.html",
+    tabId: tabId,
+  });
+
+  chrome.storage.local.set({
+    threatData: {
+      url: url,
+      message: message,
+      malicious_probability: 0,
+      threat: false,
+      dataset: false,
+    },
+  });
+
+  console.log("✅ Safe site set with popup_safe.");
+}
+
+function markAsThreat(tabId, url) {
+  chrome.action.setIcon({
+    path: {
+      "16": "icons/warning16.png",
+      "48": "icons/warning48.png",
+      "128": "icons/warning128.png",
+    },
+    tabId: tabId,
+  });
+
+  chrome.action.setPopup({
+    popup: "popup.html",
+    tabId: tabId,
+  });
+
+  chrome.notifications.create({
+    type: "basic",
+    iconUrl: "icons/warning48.png",
+    title: "⚠ Unsafe Website Detected!",
+    message: `Potential threat found on:\n${url}`,
+    priority: 2,
+  });
+
+  console.log("🚨 Threat detected, popup and icon updated.");
+}
+
 async function checkUrlSafety(url) {
   const apiUrl = "https://threats-analysis.onrender.com/analyze";
+
   try {
     const response = await fetch(apiUrl, {
       method: "POST",
@@ -158,15 +143,17 @@ async function checkUrlSafety(url) {
     });
 
     if (!response.ok) {
-      console.error(`⚠️ API error (${response.status}): ${response.statusText}`);
-      return { error: `API error (${response.status}): ${response.statusText}` };
+      const errorMsg = `API error (${response.status}): ${response.statusText}`;
+      console.error("⚠", errorMsg);
+      return { error: errorMsg };
     }
 
     const data = await response.json();
     console.log("📡 API Response:", data);
 
+    // Validate expected fields
     if (!("malicious_probability" in data) && !("threat" in data) && !("dataset" in data)) {
-      console.warn("⚠️ API response missing expected fields. Marking as safe by default.");
+      console.warn("⚠ API response missing fields. Marking as safe.");
       return {
         url: url,
         malicious_probability: 0,
@@ -178,7 +165,7 @@ async function checkUrlSafety(url) {
 
     return data;
   } catch (error) {
-    console.error("❌ Error connecting to the API:", error);
+    console.error("❌ API fetch failed:", error);
     return { error: "Error connecting to the API" };
   }
 }
