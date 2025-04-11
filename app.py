@@ -105,7 +105,7 @@ def analyze_url():
         google_threat = check_google_safe_browsing(url)
         vt_threat = check_virustotal(url)
 
-        # ✅ OpenAI GenAI Analysis
+        # ✅ OpenAI GenAI Analysis with status
         try:
             ai_response = openai.ChatCompletion.create(
                 model="gpt-3.5-turbo",
@@ -115,8 +115,14 @@ def analyze_url():
                 ]
             )
             genai_output = ai_response["choices"][0]["message"]["content"]
+            genai_status = "success"
         except Exception as e:
-            genai_output = f"GenAI analysis failed: {str(e)}"
+            if "quota" in str(e).lower():
+                genai_output = "GenAI analysis unavailable: quota exceeded."
+                genai_status = "quota_exceeded"
+            else:
+                genai_output = f"GenAI analysis failed: {str(e)}"
+                genai_status = "error"
 
         # ✅ Return (Safe Serialization)
         return jsonify({
@@ -126,7 +132,8 @@ def analyze_url():
             "message": "Potentially malicious" if ai_threat else "Seems safe",
             "google_safe_browsing": bool(google_threat) if google_threat is not None else None,
             "virustotal": bool(vt_threat) if vt_threat is not None else None,
-            "genai_analysis": str(genai_output)
+            "genai_analysis": str(genai_output),
+            "genai_status": genai_status
         })
 
     except Exception as e:
