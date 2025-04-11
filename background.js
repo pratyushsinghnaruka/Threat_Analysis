@@ -45,29 +45,21 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
         const isThreat = isDatasetThreat || data.threat === true || probability > 50;
         let genaiText = data.genai_analysis || null;
 
-        // ✅ Adjust misleading "false" GenAI outputs if probability is high
-        if (genaiText && genaiText.toLowerCase().includes("false") && probability > 90) {
+        // ✅ Adjust misleading GenAI "False" outputs
+        if (genaiText && genaiText.toLowerCase().includes("false") && probability > 0.9) {
           genaiText = "⚠️ Likely malicious (based on ML and API results)";
         }
 
-        // ✅ Improve detection of vague or misleading GenAI responses
-        const weakGenAI =
-          genaiText &&
-          (
-            genaiText.toLowerCase().includes("appears to be a legitimate") ||
-            genaiText.toLowerCase().includes("always be cautious") ||
-            genaiText.toLowerCase().includes("verify the authenticity") ||
-            genaiText.toLowerCase().includes("check before clicking") ||
-            genaiText.toLowerCase().includes("important to be cautious") ||
-            genaiText.length < 200
-          );
+        // ✅ Patch vague GenAI responses when probability is very high
+        const weakGenAI = genaiText &&
+          (genaiText.toLowerCase().includes("appears to be a legitimate") ||
+           genaiText.toLowerCase().includes("always be cautious") ||
+           genaiText.length < 100);
 
-        const genaiFlagged = probability > 90 && weakGenAI;
-
-        if (genaiFlagged) {
+        if (probability > 95 && weakGenAI) {
           genaiText =
             "⚠️ This website is flagged as malicious by our systems.\n\n" +
-            "GenAI was unable to provide a strong analysis, but our ML and threat intelligence APIs indicate this site is likely unsafe.\n\n" +
+            "GenAI was unable to provide a reliable analysis, but our ML and API responses strongly indicate this site is unsafe.\n\n" +
             "Malicious Probability: " + probability.toFixed(2) + "%";
         }
 
@@ -128,7 +120,6 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
               threat: isThreat,
               dataset: isDatasetThreat,
               genai_analysis: genaiText,
-              genai_flagged: genaiFlagged
             },
           },
           () => {
@@ -142,7 +133,6 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
                 threat: isThreat,
                 dataset: isDatasetThreat,
                 genai_analysis: genaiText,
-                genai_flagged: genaiFlagged
               });
             }
           }
