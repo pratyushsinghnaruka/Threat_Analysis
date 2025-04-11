@@ -1,180 +1,158 @@
-import warnings
-warnings.filterwarnings("ignore", message=".does not have valid feature names.")
-
 import os
-import re
-import traceback
-from urllib.parse import urlparse
-
-import numpy as np
-import requests
 import joblib
+import requests
+import openai
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from scipy.sparse import hstack
 from dotenv import load_dotenv
-import openai
 
 # Load environment variables
 load_dotenv()
 
-openai.api_key = os.getenv("OPENAI_API_KEY")
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
-VT_API_KEY = os.getenv("VIRUSTOTAL_API_KEY")
-HF_API_KEY = os.getenv("HUGGINGFACE_API_KEY")
-
-# Load model and vectorizer
-model = joblib.load("best_model.pkl")
-vectorizer = joblib.load("vectorizer.pkl")
-
-THRESHOLD = 0.9
-
+# Setup Flask app
 app = Flask(__name__)
 CORS(app)
 
-def extract_features(url):
-    parsed_url = urlparse(url)
-    return [
-        len(url),
-        url.count('.'),
-        url.count('-'),
-        url.count('@'),
-        url.count('?'),
-        url.count('='),
-        int(bool(re.search(r'https?', url))),
-        int(bool(re.search(r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}', url))),
-        parsed_url.netloc.count('.'),
-        len(parsed_url.netloc)
-    ]
+# Load ML model and vectorizer
+model = joblib.load("best_model.pkl")
+vectorizer = joblib.load("vectorizer.pkl")
 
+# API Keys
+openai.api_key = os.getenv("OPENAI_API_KEY")
+VIRUSTOTAL_API_KEY = os.getenv("VIRUSTOTAL_API_KEY")
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+
+# Safe Browsing API URL
+SAFE_BROWSING_API_URL = f"https://safebrowsing.googleapis.com/v4/threatMatches:find?key={GOOGLE_API_KEY}"
+
+# Helper: Google Safe Browsing
 def check_google_safe_browsing(url):
-    api_url = f"https://safebrowsing.googleapis.com/v4/threatMatches:find?key={GOOGLE_API_KEY}"
     payload = {
-        "client": {"clientId": "your-client-id", "clientVersion": "1.0"},
+        "client": {
+            "clientId": GOOGLE_CLIENT_ID,
+            "clientVersion": "1.0.0"
+        },
         "threatInfo": {
-            "threatTypes": ["MALWARE", "SOCIAL_ENGINEERING"],
+            "threatTypes": ["MALWARE", "SOCIAL_ENGINEERING", "UNWANTED_SOFTWARE", "POTENTIALLY_HARMFUL_APPLICATION"],
             "platformTypes": ["ANY_PLATFORM"],
             "threatEntryTypes": ["URL"],
-            "threatEntries": [{"url": url}],
-        },
+            "threatEntries": [{"url": url}]
+        }
     }
-    res = requests.post(api_url, json=payload)
-    return res.json() != {}
+    try:
+        response = requests.post(SAFE_BROWSING_API_URL, json=payload)
+        if response.status_code == 200:
+            result = response.json()
+            return bool(result.get("matches"))
+    except Exception as e:
+        print("Google Safe Browsing Error:", e)
+    return False
 
+# Helper: VirusTotal
 def check_virustotal(url):
-    headers = {"x-apikey": VT_API_KEY}
-    response = requests.post("https://www.virustotal.com/api/v3/urls", headers=headers, data={"url": url})
-    if response.status_code != 200:
-        return None
-    analysis_id = response.json().get("data", {}).get("id")
-    if not analysis_id:
-        return None
-    report = requests.get(f"https://www.virustotal.com/api/v3/analyses/{analysis_id}", headers=headers)
-    if report.status_code != 200:
-        return None
-    stats = report.json().get("data", {}).get("attributes", {}).get("stats", {})
-    return stats.get("malicious", 0) > 0
+    headers = {
+        "x-apikey": VIRUSTOTAL_API_KEY
+    }
+    try:
+        response = requests.get(f"https://www.virustotal.com/api/v3/urls", headers=headers, params={"url": url})
+        if response.status_code == 200:
+            scan_id = response.json()["data"]["id"]
+            result = requests.get(f"https://www.virustotal.com/api/v3/analyses/{scan_id}", headers=headers)
+            if result.status_code == 200:
+                analysis = result.json()
+                stats = analysis["data"]["attributes"]["stats"]
+                malicious = stats.get("malicious", 0)
+                suspicious = stats.get("suspicious", 0)
+                return malicious > 0 or suspicious > 0
+    except Exception as e:
+        print("VirusTotal Error:", e)
+    return False
 
-@app.route("/")
-def home():
-    return "URL Threat Detector API is Live!"
+# Helper: GenAI
+def analyze_url_with_genai(url):
+    prompt = f"Analyze the following URL and determine if it's likely to be safe or malicious. Be honest and cautious:\n\n{url}"
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            temperature=0.2,
+            messages=[
+                {"role": "system", "content": "You are a cybersecurity expert."},
+                {"role": "user", "content": prompt}
+            ]
+        )
+        result = response['choices'][0]['message']['content'].strip()
+        return result
+    except Exception as e:
+        print("OpenAI Error:", e)
+        return analyze_url_with_huggingface(url)
 
+# Fallback: Hugging Face Mistral
+def analyze_url_with_huggingface(url):
+    hf_token = os.getenv("HF_TOKEN")
+    endpoint = "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.1"
+    headers = {"Authorization": f"Bearer {hf_token}"}
+    payload = {"inputs": f"Analyze this URL for safety: {url}"}
+    try:
+        response = requests.post(endpoint, headers=headers, json=payload, timeout=10)
+        if response.status_code == 200:
+            output = response.json()
+            return output[0]["generated_text"].strip()
+    except Exception as e:
+        print("Hugging Face Error:", e)
+    return "Unable to analyze URL using GenAI."
+
+# Main route
 @app.route("/analyze", methods=["POST"])
 def analyze_url():
-    try:
-        data = request.get_json()
-        url = data.get("url")
-        if not url:
-            return jsonify({"error": "No URL provided"}), 400
+    data = request.get_json()
+    url = data.get("url")
 
-        numeric_features = np.array([extract_features(url)], dtype=np.float64)
-        text_features = vectorizer.transform([url])
-        features_combined = hstack([numeric_features, text_features])
+    if not url:
+        return jsonify({"error": "Missing URL"}), 400
 
-        malicious_prob = model.predict_proba(features_combined)[0][1]
-        ai_threat = malicious_prob >= THRESHOLD
+    # ML prediction
+    features = vectorizer.transform([url])
+    prediction = model.predict(features)[0]
+    probability = round(model.predict_proba(features)[0][1] * 100, 2)
+    in_dataset = bool(prediction)
 
-        google_threat = check_google_safe_browsing(url)
-        vt_threat = check_virustotal(url)
+    # Google + VT
+    google_threat = check_google_safe_browsing(url)
+    vt_threat = check_virustotal(url)
+    external_threat = google_threat or vt_threat
 
-        # ✅ OpenAI + Hugging Face fallback
-        try:
-            ai_response = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {"role": "system", "content": "You are a cybersecurity assistant."},
-                    {"role": "user", "content": f"Analyze this URL: {url}. Could it be suspicious or malicious?"}
-                ]
-            )
-            genai_output = ai_response["choices"][0]["message"]["content"]
-            genai_status = "success"
+    # GenAI
+    genai_text = analyze_url_with_genai(url)
 
-        except Exception as e:
-            if "quota" in str(e).lower():
-                try:
-                    hf_headers = {"Authorization": f"Bearer {HF_API_KEY}"}
-                    hf_payload = {
-                        "inputs": f"Analyze this URL: {url}. Could it be malicious?",
-                        "parameters": {"max_new_tokens": 100}
-                    }
-                    hf_response = requests.post(
-                        "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.1",
-                        headers=hf_headers,
-                        json=hf_payload
-                    )
-                    if hf_response.status_code == 200:
-                        genai_output = hf_response.json()[0]["generated_text"]
-                        genai_status = "huggingface_fallback"
-                    else:
-                        genai_output = "GenAI analysis failed: Hugging Face API error."
-                        genai_status = "huggingface_error"
-                except Exception as hf_error:
-                    genai_output = f"GenAI analysis failed using Hugging Face: {str(hf_error)}"
-                    genai_status = "huggingface_error"
-            else:
-                genai_output = f"GenAI analysis failed: {str(e)}"
-                genai_status = "openai_error"
+    # Check for vague GenAI
+    vague_keywords = [
+        "appears to be legitimate",
+        "always be cautious",
+        "verify the authenticity",
+        "check before clicking",
+        "important to be cautious",
+        "general advice",
+        "phishing techniques",
+        "always practice caution",
+        "safety cannot be guaranteed"
+    ]
+    vague_genai = any(k in genai_text.lower() for k in vague_keywords) or len(genai_text) < 200
+    genai_flagged = probability > 90 and vague_genai
 
-        # ✅ Patch vague GenAI responses if probability is high
-        vague_indicators = [
-            "appears to be a legitimate",
-            "always be cautious",
-            "verify the authenticity",
-            "check before clicking",
-            "important to be cautious",
-        ]
-        genai_lower = genai_output.lower() if genai_output else ""
-        is_weak_genai = (
-            any(phrase in genai_lower for phrase in vague_indicators)
-            or len(genai_output.strip()) < 200
-        )
+    # Final decision
+    is_threat = in_dataset or external_threat or genai_flagged
 
-        genai_flagged = is_weak_genai and malicious_prob > 0.9
+    return jsonify({
+        "url": url,
+        "message": "Threat analysis complete.",
+        "threat": is_threat,
+        "dataset": in_dataset,
+        "malicious_probability": probability,
+        "genai_analysis": genai_text,
+        "genai_flagged": genai_flagged
+    })
 
-        if genai_flagged:
-            genai_output = (
-                "⚠️ This website is flagged as malicious by our systems.\n\n"
-                "GenAI was unable to provide a strong analysis, but our ML and threat intelligence APIs "
-                "indicate this site is likely unsafe.\n\n"
-                f"Malicious Probability: {malicious_prob:.2f}%"
-            )
-
-        return jsonify({
-            "url": str(url),
-            "threat": bool(ai_threat),
-            "malicious_probability": float(malicious_prob),
-            "message": "Potentially malicious" if ai_threat else "Seems safe",
-            "google_safe_browsing": bool(google_threat) if google_threat is not None else None,
-            "virustotal": bool(vt_threat) if vt_threat is not None else None,
-            "genai_analysis": str(genai_output),
-            "genai_status": genai_status,
-            "genai_flagged": genai_flagged
-        })
-
-    except Exception as e:
-        traceback.print_exc()
-        return jsonify({"error": f"Internal Server Error: {str(e)}"}), 500
-
+# Run the app
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=True)
+    app.run(debug=True)
