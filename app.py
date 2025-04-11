@@ -1,112 +1,137 @@
+import warnings
+warnings.filterwarnings("ignore", message=".does not have valid feature names.")
+
 import os
+import re
+import traceback
+from urllib.parse import urlparse
+
+import numpy as np
 import pandas as pd
+import requests
+import joblib
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import joblib
-import numpy as np
-import openai
+from scipy.sparse import hstack
 from dotenv import load_dotenv
-import requests
+import openai
 
 # Load environment variables
 load_dotenv()
 
-# Set OpenAI API key (legacy style)
 openai.api_key = os.getenv("OPENAI_API_KEY")
-
-# Load other API keys
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
-VT_API_KEY = os.getenv("VT_API_KEY")
-
-# Initialize Flask app
-app = Flask(__name__)
-CORS(app)
+VT_API_KEY = os.getenv("VIRUSTOTAL_API_KEY")
 
 # Load model and vectorizer
 model = joblib.load("best_model.pkl")
 vectorizer = joblib.load("vectorizer.pkl")
 
+# Threshold for AI model
+THRESHOLD = 0.9
+
+# Initialize Flask app
+app = Flask(__name__)
+CORS(app)
+
+# Function to extract numeric features
+def extract_features(url):
+    parsed_url = urlparse(url)
+    return [
+        len(url),
+        url.count('.'),
+        url.count('-'),
+        url.count('@'),
+        url.count('?'),
+        url.count('='),
+        int(bool(re.search(r'https?', url))),
+        int(bool(re.search(r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}', url))),
+        parsed_url.netloc.count('.'),
+        len(parsed_url.netloc)
+    ]
+
+# Google Safe Browsing
+def check_google_safe_browsing(url):
+    api_url = f"https://safebrowsing.googleapis.com/v4/threatMatches:find?key={GOOGLE_API_KEY}"
+    payload = {
+        "client": {"clientId": "your-client-id", "clientVersion": "1.0"},
+        "threatInfo": {
+            "threatTypes": ["MALWARE", "SOCIAL_ENGINEERING"],
+            "platformTypes": ["ANY_PLATFORM"],
+            "threatEntryTypes": ["URL"],
+            "threatEntries": [{"url": url}],
+        },
+    }
+    res = requests.post(api_url, json=payload)
+    return res.json() != {}
+
+# VirusTotal Check
+def check_virustotal(url):
+    headers = {"x-apikey": VT_API_KEY}
+    response = requests.post("https://www.virustotal.com/api/v3/urls", headers=headers, data={"url": url})
+    if response.status_code != 200:
+        return None
+    analysis_id = response.json().get("data", {}).get("id")
+    if not analysis_id:
+        return None
+    report = requests.get(f"https://www.virustotal.com/api/v3/analyses/{analysis_id}", headers=headers)
+    if report.status_code != 200:
+        return None
+    stats = report.json().get("data", {}).get("attributes", {}).get("stats", {})
+    return stats.get("malicious", 0) > 0
+
 @app.route("/")
-def index():
-    return "URL Threat Detection API is running!"
+def home():
+    return "URL Threat Detector API is Live!"
 
 @app.route("/analyze", methods=["POST"])
-def analyze():
-    data = request.get_json()
-    url = data.get("url")
-
-    if not url:
-        return jsonify({"error": "No URL provided"}), 400
-
-    # ML prediction with feature names (LightGBM safe)
+def analyze_url():
     try:
-        features = vectorizer.transform([url])
-        features_df = pd.DataFrame(features.toarray(), columns=vectorizer.get_feature_names_out())
-        prediction = model.predict(features_df)[0]
-        confidence = max(model.predict_proba(features_df)[0])
+        data = request.get_json()
+        url = data.get("url")
+        if not url:
+            return jsonify({"error": "No URL provided"}), 400
+
+        # ✅ Combined Feature Engineering
+        numeric_features = np.array([extract_features(url)], dtype=np.float64)
+        text_features = vectorizer.transform([url])
+        features_combined = hstack([numeric_features, text_features])
+
+        # ✅ Predict
+        malicious_prob = model.predict_proba(features_combined)[0][1]
+        ai_threat = malicious_prob >= THRESHOLD
+
+        # ✅ External APIs
+        google_threat = check_google_safe_browsing(url)
+        vt_threat = check_virustotal(url)
+
+        # ✅ OpenAI GenAI Analysis
+        try:
+            ai_response = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": "You are a cybersecurity assistant."},
+                    {"role": "user", "content": f"Analyze this URL: {url}. Could it be suspicious or malicious?"}
+                ]
+            )
+            genai_output = ai_response["choices"][0]["message"]["content"]
+        except Exception as e:
+            genai_output = f"GenAI analysis failed: {str(e)}"
+
+        return jsonify({
+            "url": url,
+            "threat": ai_threat,
+            "malicious_probability": float(malicious_prob),
+            "message": "Potentially malicious" if ai_threat else "Seems safe",
+            "google_safe_browsing": google_threat,
+            "virustotal": vt_threat,
+            "genai_analysis": genai_output
+        })
+
     except Exception as e:
-        return jsonify({"error": f"Model prediction failed: {str(e)}"}), 500
-
-    # Google Safe Browsing check
-    google_threat = False
-    try:
-        google_res = requests.post(
-            f"https://safebrowsing.googleapis.com/v4/threatMatches:find?key={GOOGLE_API_KEY}",
-            json={
-                "client": {"clientId": "url-detector", "clientVersion": "1.0"},
-                "threatInfo": {
-                    "threatTypes": ["MALWARE", "SOCIAL_ENGINEERING"],
-                    "platformTypes": ["ANY_PLATFORM"],
-                    "threatEntryTypes": ["URL"],
-                    "threatEntries": [{"url": url}],
-                },
-            },
-        ).json()
-        google_threat = "matches" in google_res
-    except Exception:
-        pass
-
-    # VirusTotal check
-    vt_threat = False
-    try:
-        headers = {"x-apikey": VT_API_KEY}
-        scan_url = "https://www.virustotal.com/api/v3/urls"
-        scan_res = requests.post(scan_url, headers=headers, data={"url": url}).json()
-        scan_id = scan_res["data"]["id"]
-
-        report = requests.get(f"{scan_url}/{scan_id}", headers=headers).json()
-        stats = report["data"]["attributes"]["last_analysis_stats"]
-        vt_threat = stats.get("malicious", 0) > 0
-    except Exception:
-        pass
-
-    # OpenAI GenAI URL context analysis
-    try:
-        prompt = f"Analyze this URL: {url}. Could it be suspicious, scammy, or malicious?"
-        ai_response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "You are a cybersecurity assistant."},
-                {"role": "user", "content": prompt}
-            ]
-        )
-        genai_output = ai_response["choices"][0]["message"]["content"]
-    except Exception as e:
-        genai_output = f"GenAI analysis failed: {str(e)}"
-
-    final_threat = prediction == 1 or google_threat or vt_threat
-
-    return jsonify({
-        "url": url,
-        "ai_prediction": "malicious" if prediction == 1 else "safe",
-        "confidence": confidence,
-        "google_threat": google_threat,
-        "vt_threat": vt_threat,
-        "genai_analysis": genai_output,
-        "final_threat": final_threat
-    })
+        traceback.print_exc()
+        return jsonify({"error": f"Internal Server Error: {str(e)}"}), 500
 
 if __name__ == "__main__":
-    app.run(debug=True)
-
-
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=True)
