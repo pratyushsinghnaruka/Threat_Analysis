@@ -133,6 +133,7 @@ def analyze_url():
             else:
                 genai_output = f"GenAI analysis failed: {str(e)}"
                 genai_status = "openai_error"
+# ... (rest of your code stays exactly the same)
 
         # ✅ Prepend clarification if model is highly confident
         if malicious_prob >= THRESHOLD:
@@ -140,6 +141,12 @@ def analyze_url():
                 f"⚠️ This URL is classified as malicious based on model prediction (≥ 90% confidence).\n\n"
                 + genai_output
             )
+
+        # ✅ Remove "The URL appears to be a legitimate..." line if present
+        genai_output = '\n'.join([
+            line for line in genai_output.splitlines()
+            if not line.strip().lower().startswith("url appears to be a legitimate")
+        ])
 
         return jsonify({
             "url": str(url),
@@ -151,6 +158,9 @@ def analyze_url():
             "genai_analysis": str(genai_output),
             "genai_status": genai_status
         })
+
+# ... (rest stays unchanged)
+
 
     except Exception as e:
         traceback.print_exc()
