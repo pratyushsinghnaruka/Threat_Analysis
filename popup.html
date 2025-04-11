@@ -27,6 +27,16 @@
       border-radius: 5px;
       font-size: 13px;
     }
+    #genaiText {
+      white-space: pre-wrap;
+    }
+    #genai-verified {
+      display: none;
+      color: #555;
+      font-weight: bold;
+      margin-top: 5px;
+      display: block;
+    }
     button {
       margin-top: 15px;
       padding: 10px 20px;
@@ -52,6 +62,7 @@
   <div class="genai-box" id="genaiAnalysis" style="display: none;">
     <strong>GenAI Analysis:</strong>
     <p id="genaiText">Analyzing...</p>
+    <span id="genai-verified">🧠 GenAI Verified</span>
   </div>
 
   <button id="closeBtn">Close</button>

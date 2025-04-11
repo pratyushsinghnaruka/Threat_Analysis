@@ -29,6 +29,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
           dataset: false,
         },
       });
+
       return;
     }
 
@@ -42,7 +43,33 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
         const probability = typeof data.malicious_probability === "number" ? data.malicious_probability : 0;
         const isDatasetThreat = data.dataset === true;
         const isThreat = isDatasetThreat || data.threat === true || probability > 50;
-        const genaiText = data.genai_analysis || null;
+        let genaiText = data.genai_analysis || null;
+
+        // ✅ Adjust misleading "false" GenAI outputs if probability is high
+        if (genaiText && genaiText.toLowerCase().includes("false") && probability > 90) {
+          genaiText = "⚠️ Likely malicious (based on ML and API results)";
+        }
+
+        // ✅ Improve detection of vague or misleading GenAI responses
+        const weakGenAI =
+          genaiText &&
+          (
+            genaiText.toLowerCase().includes("appears to be a legitimate") ||
+            genaiText.toLowerCase().includes("always be cautious") ||
+            genaiText.toLowerCase().includes("verify the authenticity") ||
+            genaiText.toLowerCase().includes("check before clicking") ||
+            genaiText.toLowerCase().includes("important to be cautious") ||
+            genaiText.length < 200
+          );
+
+        const genaiFlagged = probability > 90 && weakGenAI;
+
+        if (genaiFlagged) {
+          genaiText =
+            "⚠️ This website is flagged as malicious by our systems.\n\n" +
+            "GenAI was unable to provide a strong analysis, but our ML and threat intelligence APIs indicate this site is likely unsafe.\n\n" +
+            "Malicious Probability: " + probability.toFixed(2) + "%";
+        }
 
         console.log(`🔍 Checked URL: ${url}`);
         console.log(`📌 Threat in dataset? ${isDatasetThreat}`);
@@ -100,7 +127,8 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
               malicious_probability: probability,
               threat: isThreat,
               dataset: isDatasetThreat,
-              genai_analysis: genaiText, // ✅ Added for GenAI in popup
+              genai_analysis: genaiText,
+              genai_flagged: genaiFlagged
             },
           },
           () => {
@@ -114,6 +142,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
                 threat: isThreat,
                 dataset: isDatasetThreat,
                 genai_analysis: genaiText,
+                genai_flagged: genaiFlagged
               });
             }
           }
@@ -130,8 +159,7 @@ function isGoogleSearch(url) {
 }
 
 async function checkUrlSafety(url) {
-  const apiUrl = "https://threats-analysis.onrender.com/check_url";
-
+  const apiUrl = "https://threats-analysis.onrender.com/analyze";
   try {
     const response = await fetch(apiUrl, {
       method: "POST",
@@ -154,12 +182,11 @@ async function checkUrlSafety(url) {
         malicious_probability: 0,
         threat: false,
         dataset: false,
-        message: "No threat found by default"
+        message: "No threat found by default",
       };
     }
 
     return data;
-
   } catch (error) {
     console.error("❌ Error connecting to the API:", error);
     return { error: "Error connecting to the API" };

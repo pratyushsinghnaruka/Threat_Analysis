@@ -1,5 +1,5 @@
-document.addEventListener('DOMContentLoaded', function() {
-  chrome.storage.local.get(['threatData'], function(result) {
+document.addEventListener('DOMContentLoaded', function () {
+  chrome.storage.local.get(['threatData'], function (result) {
     if (chrome.runtime.lastError) {
       console.error(chrome.runtime.lastError);
       return;
@@ -15,9 +15,29 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('probability').innerText = "Unknown";
       }
 
-      // Show GenAI analysis if available
       if (genai_analysis) {
-        document.getElementById('genaiText').innerText = genai_analysis;
+        const genaiTextEl = document.getElementById('genaiText');
+        const genaiVerifiedEl = document.getElementById('genai-verified');
+        const text = genai_analysis;
+
+        // ✅ Highlight strong GenAI alerts in red
+        if (
+          text.toLowerCase().includes("phishing") ||
+          text.toLowerCase().includes("fake login") ||
+          text.toLowerCase().includes("malicious") ||
+          text.toLowerCase().includes("unsafe") ||
+          text.toLowerCase().includes("flagged as malicious")
+        ) {
+          genaiTextEl.style.color = "red";
+          genaiTextEl.style.fontWeight = "bold";
+        }
+
+        genaiTextEl.innerText = text;
+
+        if (text.length > 50) {
+          genaiVerifiedEl.style.display = "inline-block";
+        }
+
         document.getElementById('genaiAnalysis').style.display = 'block';
       }
     } else {
@@ -25,7 +45,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   });
 
-  document.getElementById('closeBtn').addEventListener('click', function() {
+  document.getElementById('closeBtn').addEventListener('click', function () {
     window.close();
   });
 });

@@ -21,7 +21,7 @@ load_dotenv()
 openai.api_key = os.getenv("OPENAI_API_KEY")
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 VT_API_KEY = os.getenv("VIRUSTOTAL_API_KEY")
-HF_API_KEY = os.getenv("HUGGINGFACE_API_KEY")  # Add this to your .env
+HF_API_KEY = os.getenv("HUGGINGFACE_API_KEY")
 
 # Load model and vectorizer
 model = joblib.load("best_model.pkl")
@@ -135,6 +135,30 @@ def analyze_url():
                 genai_output = f"GenAI analysis failed: {str(e)}"
                 genai_status = "openai_error"
 
+        # ✅ Patch vague GenAI responses if probability is high
+        vague_indicators = [
+            "appears to be a legitimate",
+            "always be cautious",
+            "verify the authenticity",
+            "check before clicking",
+            "important to be cautious",
+        ]
+        genai_lower = genai_output.lower() if genai_output else ""
+        is_weak_genai = (
+            any(phrase in genai_lower for phrase in vague_indicators)
+            or len(genai_output.strip()) < 200
+        )
+
+        genai_flagged = is_weak_genai and malicious_prob > 0.9
+
+        if genai_flagged:
+            genai_output = (
+                "⚠️ This website is flagged as malicious by our systems.\n\n"
+                "GenAI was unable to provide a strong analysis, but our ML and threat intelligence APIs "
+                "indicate this site is likely unsafe.\n\n"
+                f"Malicious Probability: {malicious_prob:.2f}%"
+            )
+
         return jsonify({
             "url": str(url),
             "threat": bool(ai_threat),
@@ -143,7 +167,8 @@ def analyze_url():
             "google_safe_browsing": bool(google_threat) if google_threat is not None else None,
             "virustotal": bool(vt_threat) if vt_threat is not None else None,
             "genai_analysis": str(genai_output),
-            "genai_status": genai_status
+            "genai_status": genai_status,
+            "genai_flagged": genai_flagged
         })
 
     except Exception as e:
