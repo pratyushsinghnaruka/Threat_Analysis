@@ -118,14 +118,15 @@ def analyze_url():
         except Exception as e:
             genai_output = f"GenAI analysis failed: {str(e)}"
 
+        # ✅ Return (Safe Serialization)
         return jsonify({
-            "url": url,
-            "threat": ai_threat,
+            "url": str(url),
+            "threat": bool(ai_threat),
             "malicious_probability": float(malicious_prob),
             "message": "Potentially malicious" if ai_threat else "Seems safe",
-            "google_safe_browsing": google_threat,
-            "virustotal": vt_threat,
-            "genai_analysis": genai_output
+            "google_safe_browsing": bool(google_threat) if google_threat is not None else None,
+            "virustotal": bool(vt_threat) if vt_threat is not None else None,
+            "genai_analysis": str(genai_output)
         })
 
     except Exception as e:
