@@ -108,21 +108,26 @@ def analyze_url():
             genai_output = ai_response["choices"][0]["message"]["content"]
             genai_status = "success"
 
+        # ... [everything above remains unchanged]
+
         except Exception as e:
             if "quota" in str(e).lower():
                 try:
-                    hf_headers = {"Authorization": f"Bearer {HF_API_KEY}"}
+                    hf_headers = {
+                        "Authorization": f"Bearer {HF_API_KEY}",
+                        "Content-Type": "application/json"
+                    }
                     hf_payload = {
-                        "inputs": f"Analyze this URL: {url}. Could it be malicious?",
-                        "parameters": {"max_new_tokens": 100}
+                        "inputs": f"Is the following URL malicious? {url}"
                     }
                     hf_response = requests.post(
-                        "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.1",
+                        "https://api-inference.huggingface.co/models/google/flan-t5-large",
                         headers=hf_headers,
                         json=hf_payload
                     )
                     if hf_response.status_code == 200:
-                        genai_output = hf_response.json()[0]["generated_text"]
+                        hf_result = hf_response.json()
+                        genai_output = hf_result[0].get("generated_text", "").strip()
                         genai_status = "huggingface_fallback"
                     else:
                         genai_output = "GenAI analysis failed: Hugging Face API error."
@@ -133,6 +138,8 @@ def analyze_url():
             else:
                 genai_output = f"GenAI analysis failed: {str(e)}"
                 genai_status = "openai_error"
+
+# ... [everything below remains unchanged]
 
         # Add GenAI clarification for high confidence
         if malicious_prob >= THRESHOLD:
