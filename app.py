@@ -130,14 +130,18 @@ URL: {url}
                     genai_output = (
                         "🚨 This URL is classified as malicious with high confidence (≥90%).\n\n"
                         + response[0]['generated_text']
-                        + "\n\nGenAI Source: Hugging Face"
                     )
                     genai_status = "huggingface_fallback"
-                except Exception as hf_error:
-                    genai_output = f"GenAI analysis failed using Hugging Face: {str(hf_error)}"
+
+                except Exception:
+                    genai_output = (
+                        "⚠ GenAI (Hugging Face) failed. No detailed analysis available at this time."
+                    )
                     genai_status = "huggingface_error"
             else:
-                genai_output = f"GenAI analysis failed: {str(e)}"
+                genai_output = (
+                    "⚠ GenAI is currently unavailable. Please try again later."
+                )
                 genai_status = "openai_error"
 
         # Add clarification if high probability
@@ -167,14 +171,16 @@ URL: {url}
             "virustotal": bool(vt_threat) if vt_threat is not None else None,
             "genai_analysis": str(genai_output),
             "genai_status": genai_status,
-            "genai_source": "OpenAI" if genai_status == "openai_success" else "Hugging Face (Fallback)"
+            "genai_source": "OpenAI" if genai_status == "openai_success" else (
+                "Hugging Face (Fallback)" if genai_status == "huggingface_fallback" else "Unavailable"
+            )
         })
 
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": f"Internal Server Error: {str(e)}"}), 500
 
-
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=True)
+
