@@ -155,6 +155,12 @@ def analyze_url():
         genai_output = genai_output.replace("seems to be a legitimate", "seems to be not legitimate")
         genai_output = genai_output.replace("likely a legitimate", "likely not a legitimate")
 
+        # Clean Hugging Face fallback output
+        if genai_status == "huggingface_fallback":
+            genai_output = re.sub(r"(?i)malicious probability\s*[:=]\s*\d+(\.\d+)?%", "", genai_output).strip()
+            genai_output = re.sub(r"(?i)genai source\s*[:=].*", "", genai_output).strip()
+            genai_output = re.sub(r"(?i)this website is flagged.*systems.*", "", genai_output).strip()
+
         return jsonify({
             "url": str(url),
             "threat": bool(ai_threat),
@@ -163,7 +169,8 @@ def analyze_url():
             "google_safe_browsing": bool(google_threat) if google_threat is not None else None,
             "virustotal": bool(vt_threat) if vt_threat is not None else None,
             "genai_analysis": str(genai_output),
-            "genai_status": genai_status
+            "genai_status": genai_status,
+            "genai_source": "OpenAI" if genai_status == "openai_success" else "Hugging Face (Fallback)"
         })
 
     except Exception as e:
