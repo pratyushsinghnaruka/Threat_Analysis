@@ -97,7 +97,7 @@ def analyze_url():
         google_threat = check_google_safe_browsing(url)
         vt_threat = check_virustotal(url)
 
-        # Try OpenAI
+        # Try OpenAI GenAI
         try:
             ai_response = openai.ChatCompletion.create(
                 model="gpt-3.5-turbo",
@@ -116,26 +116,23 @@ def analyze_url():
         except Exception as e:
             if "quota" in str(e).lower() or "rate" in str(e).lower():
                 try:
-                    hf_headers = {
-                        "Authorization": f"Bearer {HF_API_KEY}",
-                        "Content-Type": "application/json"
-                    }
-                    hf_prompt = (
-                        f"Analyze the following URL and give a detailed cybersecurity assessment. "
-                        f"Check for phishing, malware, and fake login signs. Explain why it's suspicious if so.\n\nURL: {url}"
+                    from transformers import pipeline
+                    fallback_prompt = f"""
+You are a cybersecurity expert. Analyze the following URL and determine if it is safe or malicious.
+Provide a detailed analysis, including any suspicious patterns, fake login elements, domain legitimacy, and IP information if relevant.
+Also include the URL explicitly in the response.
+
+URL: {url}
+"""
+                    pipe = pipeline("text2text-generation", model="MBZUAI/LaMini-T5-738M")
+                    response = pipe(fallback_prompt, max_length=512, do_sample=False)
+
+                    genai_output = (
+                        "🚨 This URL is classified as malicious with high confidence (≥90%).\n\n"
+                        + response[0]['generated_text']
+                        + "\n\nGenAI Source: Hugging Face"
                     )
-                    hf_response = requests.post(
-                        "https://api-inference.huggingface.co/models/google/flan-t5-large",
-                        headers=hf_headers,
-                        json={"inputs": hf_prompt}
-                    )
-                    if hf_response.status_code == 200:
-                        hf_result = hf_response.json()
-                        genai_output = hf_result[0].get("generated_text", "").strip()
-                        genai_status = "huggingface_fallback"
-                    else:
-                        genai_output = "GenAI analysis failed: Hugging Face API error."
-                        genai_status = "huggingface_error"
+                    genai_status = "huggingface_fallback"
                 except Exception as hf_error:
                     genai_output = f"GenAI analysis failed using Hugging Face: {str(hf_error)}"
                     genai_status = "huggingface_error"
@@ -144,7 +141,7 @@ def analyze_url():
                 genai_status = "openai_error"
 
         # Add clarification if high probability
-        if malicious_prob >= THRESHOLD:
+        if malicious_prob >= THRESHOLD and "high confidence" not in genai_output.lower():
             genai_output = (
                 f"🚨 This URL is classified as malicious with high confidence (≥ 90%).\n\n"
                 + genai_output
@@ -155,7 +152,7 @@ def analyze_url():
         genai_output = genai_output.replace("seems to be a legitimate", "seems to be not legitimate")
         genai_output = genai_output.replace("likely a legitimate", "likely not a legitimate")
 
-        # Clean Hugging Face fallback output
+        # Clean fallback output
         if genai_status == "huggingface_fallback":
             genai_output = re.sub(r"(?i)malicious probability\s*[:=]\s*\d+(\.\d+)?%", "", genai_output).strip()
             genai_output = re.sub(r"(?i)genai source\s*[:=].*", "", genai_output).strip()
