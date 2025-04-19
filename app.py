@@ -97,33 +97,37 @@ def analyze_url():
         google_threat = check_google_safe_browsing(url)
         vt_threat = check_virustotal(url)
 
+        # Try OpenAI
         try:
             ai_response = openai.ChatCompletion.create(
                 model="gpt-3.5-turbo",
                 messages=[
                     {"role": "system", "content": "You are a cybersecurity assistant."},
-                    {"role": "user", "content": f"Analyze this URL: {url}. Could it be suspicious or malicious?"}
+                    {"role": "user", "content": (
+                        f"Analyze this URL: {url}\n\n"
+                        "Please give a detailed threat assessment of the domain and page structure. "
+                        "Check for signs of phishing, malware, fake logins, and suspicious patterns."
+                    )}
                 ]
             )
             genai_output = ai_response["choices"][0]["message"]["content"]
-            genai_status = "success"
-
-        # ... [everything above remains unchanged]
+            genai_status = "openai_success"
 
         except Exception as e:
-            if "quota" in str(e).lower():
+            if "quota" in str(e).lower() or "rate" in str(e).lower():
                 try:
                     hf_headers = {
                         "Authorization": f"Bearer {HF_API_KEY}",
                         "Content-Type": "application/json"
                     }
-                    hf_payload = {
-                        "inputs": f"Is the following URL malicious? {url}"
-                    }
+                    hf_prompt = (
+                        f"Analyze the following URL and give a detailed cybersecurity assessment. "
+                        f"Check for phishing, malware, and fake login signs. Explain why it's suspicious if so.\n\nURL: {url}"
+                    )
                     hf_response = requests.post(
                         "https://api-inference.huggingface.co/models/google/flan-t5-large",
                         headers=hf_headers,
-                        json=hf_payload
+                        json={"inputs": hf_prompt}
                     )
                     if hf_response.status_code == 200:
                         hf_result = hf_response.json()
@@ -139,16 +143,14 @@ def analyze_url():
                 genai_output = f"GenAI analysis failed: {str(e)}"
                 genai_status = "openai_error"
 
-# ... [everything below remains unchanged]
-
-        # Add GenAI clarification for high confidence
+        # Add clarification if high probability
         if malicious_prob >= THRESHOLD:
             genai_output = (
                 f"🚨 This URL is classified as malicious with high confidence (≥ 90%).\n\n"
                 + genai_output
             )
 
-        # Replace 'legitimate' phrasing with aggressive tone
+        # Adjust phrasings
         genai_output = genai_output.replace("appears to be a legitimate", "appears to be not legitimate")
         genai_output = genai_output.replace("seems to be a legitimate", "seems to be not legitimate")
         genai_output = genai_output.replace("likely a legitimate", "likely not a legitimate")
@@ -167,6 +169,7 @@ def analyze_url():
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": f"Internal Server Error: {str(e)}"}), 500
+
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
