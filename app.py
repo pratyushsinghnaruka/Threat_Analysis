@@ -155,12 +155,6 @@ def analyze_url():
         genai_output = genai_output.replace("seems to be a legitimate", "seems to be not legitimate")
         genai_output = genai_output.replace("likely a legitimate", "likely not a legitimate")
 
-        # Clean Hugging Face fallback output
-        if genai_status == "huggingface_fallback":
-            genai_output = re.sub(r"(?i)malicious probability\s*[:=]\s*\d+(\.\d+)?%", "", genai_output).strip()
-            genai_output = re.sub(r"(?i)genai source\s*[:=].*", "", genai_output).strip()
-            genai_output = re.sub(r"(?i)this website is flagged.*systems.*", "", genai_output).strip()
-
         return jsonify({
             "url": str(url),
             "threat": bool(ai_threat),
@@ -169,15 +163,13 @@ def analyze_url():
             "google_safe_browsing": bool(google_threat) if google_threat is not None else None,
             "virustotal": bool(vt_threat) if vt_threat is not None else None,
             "genai_analysis": str(genai_output),
-            "genai_status": genai_status,
-            "genai_source": "OpenAI" if genai_status == "openai_success" else "Hugging Face (Fallback)"
+            "genai_status": genai_status
         })
 
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": f"Internal Server Error: {str(e)}"}), 500
 
-
-if __name__ == "__main__":
+if __name__ == "_main_":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=True)
